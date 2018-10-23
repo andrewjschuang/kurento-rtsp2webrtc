@@ -34,7 +34,7 @@ var args = getopts(location.search,
 });
 
 if (args.ice_servers) {
-  console.log("Use ICE servers: " + args.ice_servers);
+  // console.log("Use ICE servers: " + args.ice_servers);
   kurentoUtils.WebRtcPeer.prototype.server.iceServers = JSON.parse(args.ice_servers);
 } else {
   // console.log("Use freeice")
@@ -67,11 +67,11 @@ window.addEventListener('load', function(){
     
   	address.disabled = true;
   	showSpinner(videoInput);
+  	showSpinner(videoOutput);
     
     var options = {
-      localVideo : videoInput,
       remoteVideo: videoOutput
-    };
+    }
     
     webRtcPeer = kurentoUtils.WebRtcPeer.WebRtcPeerRecvonly(options,
       function(error){
@@ -87,7 +87,27 @@ window.addEventListener('load', function(){
             // console.log('icegatheringstate -> ' + webRtcPeer.peerConnection.iceGatheringState);
           }
         });
-    });
+
+        var option = {
+          remoteVideo : videoInput
+        }
+
+        webRtcPeer2 = kurentoUtils.WebRtcPeer.WebRtcPeerRecvonly(option,
+          function(error){
+            if(error){
+              return console.error(error);
+            }
+    
+            webRtcPeer2.generateOffer(onOffer2);
+    
+            webRtcPeer2.peerConnection.addEventListener('iceconnectionstatechange', function(event){
+              if(webRtcPeer2 && webRtcPeer2.peerConnection){
+                // console.log("oniceconnectionstatechange -> " + webRtcPeer2.peerConnection.iceConnectionState);
+                // console.log('icegatheringstate -> ' + webRtcPeer2.peerConnection.iceGatheringState);
+              }
+            });
+          });
+      });
   }
 
   function onOffer(error, sdpOffer){
@@ -100,10 +120,14 @@ window.addEventListener('load', function(){
         if(error) return onError(error);
         
   			pipeline.create("PlayerEndpoint", {uri: address.value}, function(error, player){
-  			  if(error) return onError(error);
+          if(error) return onError(error);
+          
+          console.log('Got PlayerEndpoint');
 
-  			  pipeline.create("WebRtcEndpoint", function(error, webRtcEndpoint){
+          pipeline.create("WebRtcEndpoint", function(error, webRtcEndpoint){
             if(error) return onError(error);
+
+            console.log('Got WebRtcEndpoint');
 
             setIceCandidateCallbacks(webRtcEndpoint, webRtcPeer, onError);
 
@@ -114,7 +138,6 @@ window.addEventListener('load', function(){
 
               webRtcPeer.processAnswer(sdpAnswer);
             });
-
 
             pipeline.create('FaceOverlayFilter', function(error, filter){
               if(error) return onError(error);
@@ -151,17 +174,67 @@ window.addEventListener('load', function(){
   	});
   }
 
+  function onOffer2(error, sdpOffer){
+    if(error) return onError(error);
+
+  	kurentoClient(args.ws_uri, function(error, kurentoClient) {
+  		if(error) return onError(error);
+
+  		kurentoClient.create("MediaPipeline", function(error, pipeline) {
+        if(error) return onError(error);
+        
+  			pipeline.create("PlayerEndpoint", {uri: address.value}, function(error, player){
+          if(error) return onError(error);
+          
+          console.log('Got PlayerEndpoint');
+
+          pipeline.create("WebRtcEndpoint", function(error, webRtcEndpoint){
+            if(error) return onError(error);
+
+            console.log('Got WebRtcEndpoint');
+
+            setIceCandidateCallbacks(webRtcEndpoint, webRtcPeer2, onError);
+
+            webRtcEndpoint.processOffer(sdpOffer, function(error, sdpAnswer){
+              if(error) return onError(error);
+
+              webRtcEndpoint.gatherCandidates(onError);
+
+              webRtcPeer2.processAnswer(sdpAnswer);
+            });
+
+            player.connect(webRtcEndpoint, function(error){
+              if(error) return onError(error);
+              
+              console.log('player >>> webRtcEndpoint');
+
+              player.play(function(error){
+                if(error) return onError(error);
+                console.log('Player playing...');
+              });
+            });
+  			  });
+  			});
+  		});
+  	});
+  }
+
   function stop() {
     address.disabled = false;
     if (webRtcPeer) {
       webRtcPeer.dispose();
       webRtcPeer = null;
     }
+    if (webRtcPeer2) {
+      webRtcPeer2.dispose();
+      webRtcPeer2 = null;
+    }
     if(pipeline){
       pipeline.release();
       pipeline = null;
     }
     hideSpinner(videoInput);
+    hideSpinner(videoOutput);
   }
 
 });
